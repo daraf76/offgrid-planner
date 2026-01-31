@@ -1,3 +1,3 @@
-Uno strumento che può aiutare nello sviluppo e progettazione di un impianto fotovoltaico Off-grid.
-Un punto di partenza sicuramente da migliorare ma sviluppato con passione.
-Create la Vs. energia e buon progetto a tutti!
+A tool that can help you develop and design an off-grid photovoltaic system.
+A starting point that certainly needs improvement, but developed with passion.
+Create your own energy, and happy projecting!
