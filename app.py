@@ -5,7 +5,7 @@ import matplotlib.patches as patches
 import numpy as np
 
 # --- CONFIGURAZIONE ---
-st.set_page_config(page_title="Off-Grid Planner V15", layout="wide", page_icon="☀️")
+st.set_page_config(page_title="Off-Grid Planner V15.1", layout="wide", page_icon="☀️")
 
 # --- CSS (FIX LEGGIBILITÀ) ---
 st.markdown("""
@@ -53,7 +53,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.title("☀️ Off-Grid Planner V15 by RD")
+st.title("☀️ Off-Grid Planner V15.1 by RD")
 
 # --- ALGORITMO SMART LAYOUT ---
 def get_grid_fit(space_w, space_h, item_w, item_h, gap):
@@ -136,49 +136,40 @@ ore_sole_estate = st.sidebar.number_input("Ore Sole Estate (PSH)", value=6.0, st
 efficienza_sistema = st.sidebar.slider("Efficienza (%)", 70, 95, 85) / 100
 
 # --- TABS ---
-# AGGIUNTO TAB INFO ALLA FINE
 tab_loads, tab_design, tab_capex, tab_electric, tab_winter, tab_summer, tab_report, tab_info = st.tabs([
-    "🏠 Consumi", "📐 Progettazione", "🛠️ Costi", "⚡ Param.Elettrici", "❄️ Inverno", "☀️ Estate", "📋 Riepilogo", "ℹ️ Metodo di Calcolo"
+    "🏠 Consumi", "📐 Progettazione", "🛠️ Costi", "⚡ Elettrica", "❄️ Inverno", "☀️ Estate", "📋 Riepilogo", "ℹ️ Metodo di Calcolo"
 ])
 
 # --- TAB 1: CONSUMI ---
 with tab_loads:
     c1, c2, c3 = st.columns(3)
+    loads_power = []
     
-    # Inizializziamo liste separate per gestire meglio i picchi
-    loads_power = [] # Potenze nominali
-    
-    # 1. BASE
     with c1:
         st.markdown('<div class="icon-header">💡 Carichi Casa</div>', unsafe_allow_html=True)
         base = {
-            "Frigo": {"kwh": 1.6, "w": 150}, 
-            "Luci": {"kwh": 0.7, "w": 100}, 
-            "TV/PC": {"kwh": 1.3, "w": 300}, 
-            "Lavatrice": {"kwh": 1.2, "w": 2200}, 
-            "Lavastoviglie": {"kwh": 1.3, "w": 2200}, 
-            "Clima": {"kwh": 1.0, "w": 1000},
-            "Pompa acqua": {"kwh": 0.9, "w": 1000},    
-            "Forno": {"kwh": 1.6, "w": 2500},
-            "Phon": {"kwh": 0.4, "w": 2000}
+            "Frigo": {"kwh": 1.5, "w": 150}, 
+            "Luci": {"kwh": 0.5, "w": 200}, 
+            "TV/PC": {"kwh": 1.0, "w": 300}, 
+            "Lavatrice": {"kwh": 1.0, "w": 2200}, 
+            "Lavastoviglie": {"kwh": 1.2, "w": 2200}, 
+            "Pompa": {"kwh": 0.8, "w": 1000},
+            "Clima": {"kwh": 0.8, "w": 2000},
+            "Forno": {"kwh": 1.5, "w": 2500}
         }
         sel = st.multiselect("Dispositivi:", list(base.keys()), default=["Frigo","Luci","TV/PC","Lavatrice"])
-        
         kwh_base = 0
         for item in sel:
             kwh_base += base[item]["kwh"]
             loads_power.append(base[item]["w"])
-            
         fabbisogno_base_kwh = kwh_base
         st.info(f"Consumo Base: **{round(fabbisogno_base_kwh, 1)} kWh**")
 
-    # 2. RISCALDAMENTO
     with c2:
         st.markdown('<div class="icon-header">🔥 Riscaldamento</div>', unsafe_allow_html=True)
-        kw_pdc_p = 0
         if st.checkbox("Usa PdC/Boiler"):
             if st.radio("Tipo:", ["Boiler ACS", "PdC Riscaldamento"]) == "Boiler ACS":
-                pot = st.number_input("kW Resistenza", 1.0, 3.0, 1.2, step=0.1)
+                pot = st.number_input("kW Resistenza", 1.2, 3.0, 1.5)
                 ore = st.slider("Ore Boiler", 1, 5, 2)
                 kwh_pdc_inv = pot * ore
                 loads_power.append(pot * 1000)
@@ -187,47 +178,35 @@ with tab_loads:
                 iso = st.select_slider("Coibentazione", ["Pessima", "Media", "Ottima"])
                 cf = 0.12 if iso=="Pessima" else (0.08 if iso=="Media" else 0.05)
                 kwh_pdc_inv = (mq*cf/3)*8
-                # La PdC ha un motore, lo consideriamo nel picco
                 loads_power.append((mq*cf/3)*1000)
         st.info(f"Consumo Termico: **{round(kwh_pdc_inv, 1)} kWh**")
 
-    # 3. EV
     with c3:
         st.markdown('<div class="icon-header">🚗 EV</div>', unsafe_allow_html=True)
-        kw_ev_p = 0
         if st.checkbox("Ricarica EV"):
             km = st.number_input("Km/gg", 10, 200, 40)
             cons = st.number_input("kWh/100km", 10.0, 30.0, 18.0)
             kwh_ev = (km/100)*cons
             wb = st.selectbox("Wallbox kW", [2.3, 3.7, 7.4])
-            # La Wallbox è un carico resistivo costante e pesante
             loads_power.append(wb * 1000)
             st.metric("Ricarica", f"{round(kwh_ev, 1)} kWh")
 
-    # --- CALCOLO INVERTER CORRETTO ---
     fabbisogno_invernale_tot = fabbisogno_base_kwh + kwh_pdc_inv + kwh_ev
     
+    # CALCOLO INVERTER CORRETTO
     if loads_power:
-        # 1. Somma di tutto con contemporaneità 0.7 (più sicuro di 0.6)
         scenario_contemporaneo = sum(loads_power) * 0.6
-        
-        # 2. Carico singolo più grande con fattore di spunto 1.5
-        # (Es. una PdC da 3kW richiede spunto, una Wallbox no, ma per sicurezza stiamo larghi)
         max_load = max(loads_power)
         scenario_spunto = max_load * 1.5
-        
-        # 3. Scegliamo il peggiore dei due casi
         inverter_netto = max(scenario_contemporaneo, scenario_spunto)
-        
-        # 4. Aggiungiamo margine sicurezza hardware +20%
         picco_potenza_kW = (inverter_netto * 1.2) / 1000
     else:
-        picco_potenza_kW = 3.0 # Minimo sindacale se non seleziona nulla
+        picco_potenza_kW = 3.0
 
     st.divider()
     c_res1, c_res2 = st.columns(2)
-    c_res1.metric("Fabbisogno Invernale", f"{round(fabbisogno_invernale_tot, 1)} kWh/gg")
-    c_res2.metric("Inverter Consigliato", f"{round(picco_potenza_kW, 1)} kW", help="Include margine 20% e gestione spunti motori")
+    c_res1.metric("Fabbisogno Inv.", f"{round(fabbisogno_invernale_tot, 1)} kWh/gg")
+    c_res2.metric("Inverter Req.", f"{round(picco_potenza_kW, 1)} kW")
 
 # --- TAB 2: DESIGN ---
 with tab_design:
@@ -360,14 +339,12 @@ with tab_summer:
         ss.append(max(0,s)); ls.append(l); bs.append(cb)
         
     fig_s, ax_s = plt.subplots(figsize=(10, 3))
-    # Uniamo le legende
     ln1 = ax_s.plot(hs, ss, color='gold', label='PV')[0]
     ln2 = ax_s.plot(hs, ls, color='blue', label='Carichi')[0]
     ax2 = ax_s.twinx()
     ln3 = ax2.plot(hs, bs, color='green', label='Batt')[0]
     lns = [ln1, ln2, ln3]; labs = [l.get_label() for l in lns]
     ax_s.legend(lns, labs, loc='upper left', frameon=True)
-    
     ax_s.set_title("Profilo Giornaliero (24 Ore)")
     ax_s.grid(True, alpha=0.3)
     st.pyplot(fig_s)
@@ -413,11 +390,11 @@ with tab_report:
     """
     st.download_button("📥 Scarica Report TXT", txt_down, "preventivo.txt")
 
-# --- TAB 8: INFO TECNICHE ---
+# --- TAB 8: INFO TECNICHE (CORRETTO) ---
 with tab_info:
     st.subheader("ℹ️ Metodologia di Calcolo")
     st.markdown("""
-    Questo software utilizza algoritmi deterministici basati sullo standard industriale PSH (Peak Sun Hours) per il dimensionamento prudenziale di impianti a isola.
+    Questo software utilizza algoritmi deterministici basati sullo standard industriale PSH (Peak Sun Hours).
     
     ### 1. Produzione Energetica
     L'energia giornaliera media è calcolata come:
@@ -426,12 +403,11 @@ with tab_info:
     st.markdown(f"""
     Dove:
     * $P_{{PV}}$: Potenza nominale del campo fotovoltaico ({round(kw_pv_tot, 1)} kWp).
-    * $PSH$: Ore di sole picco equivalenti (Input Utente: {ore_sole_inverno}h Inv / {ore_sole_estate}h Est). 
-    * $\eta_{{sys}}$: Efficienza complessiva del sistema (Input Utente: {efficienza_sistema*100}%).
+    * $PSH$: Ore di sole picco equivalenti (Input Utente: {ore_sole_inverno}h Inv / {ore_sole_estate}h Est).
+    * $\\eta_{{sys}}$: Efficienza complessiva del sistema (Input Utente: {efficienza_sistema*100}%).
     
     ### 2. Simulazione Oraria (Grafici)
-    Per generare i profili di carica/scarica, il totale giornaliero viene distribuito sulle 24 ore secondo curve geometriche:
-    * **Inverno:** Distribuzione "a campana stretta" (Parabola) concentrata tra le 09:00 e le 15:00.
+    * **Inverno:** Distribuzione "a campana stretta" concentrata tra le 09:00 e le 15:00.
     * **Estate:** Distribuzione "sinusoidale ampia" dalle 06:00 alle 20:00.
     
     ### 3. Bilancio Batteria
@@ -439,8 +415,8 @@ with tab_info:
     """)
     st.latex(r'''SoC_{t} = SoC_{t-1} + (E_{PV,t} - E_{Load,t})''')
     st.markdown("""
-    * Se $SoC > CapacitàMax$: L'energia eccedente è considerata "Surplus" (Taglio produzione).
+    * Se $SoC > CapacitàMax$: L'energia eccedente è considerata "Surplus".
     * Se $SoC < 0$: Si verifica un Blackout (linea rossa nel grafico).
     """)
     
-    st.info("Nota: I calcoli sono stime basate sui dati inseriti. Le condizioni meteo reali possono variare significativamente.")
+    st.info("Nota: I calcoli sono stime basate sui dati inseriti.")
